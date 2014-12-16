@@ -1,14 +1,18 @@
 #!/usr/bin/python
 
 import os
-import xmlrpclib
-import urllib
+import xmlrpc.client as xmlrpclib
+import urllib.request
 
 # Helper function to check if URL exists
 
 def checkURL(url):
-	try: urllib.urlopen(url)
-	except IOError: return 0
+	try: 
+		with urllib.request.urlopen(url) as current_url:
+			current_url.read()
+	except IOError: 
+		return 0
+	
 	return 1
 
 class BlogError(Exception):
@@ -28,7 +32,7 @@ class Blog(object):
 	"""
 	Base class for all blog objects.
 	"""
-	def __init__(self, serverapi, username, password, default_blog_id=None, appkey='0x001'):
+	def __init__(self, serverapi, username, password, default_blog_id=None, methodList=[], appkey='0x001'):
 		"""
 		Args:
 			serverapi = URL to the XML-RPC API.
@@ -38,7 +42,7 @@ class Blog(object):
 		self.username = username
 		self.password = password
 		self.appkey = appkey    
-		self.methods = []
+		self.methods = methodList
 		if default_blog_id is not None:
 			self.default_blog_id = default_blog_id
 
@@ -48,10 +52,11 @@ class Blog(object):
 
 		# Connect to the api. Call listMethods to keep a dictionary of available methods
 		self.server             = xmlrpclib.ServerProxy(serverapi)
-		self.list_methods()
 
+		self.list_methods()
+		
 	def list_methods(self):
-		"""Call systen.listMethods on server.
+		"""Call system.listMethods on server.
 
 		Returns:
 			List of XML-RPC methods implemented by the server. 
@@ -59,7 +64,7 @@ class Blog(object):
 		if not len(self.methods):
 			try:
 				self.methods = self.server.system.listMethods()
-			except xmlrpclib.Fault, fault:
+			except xmlrpclib.Fault as fault:
 				raise BlogError(fault.faultString)
 
 		return self.methods.sort()
@@ -77,8 +82,8 @@ class Blog(object):
 			raise BlogError(BlogError.METHOD_NOT_SUPPORTED)
 
 		try:
-			r = getattr(self.server, methodname)(args)
-		except xmlrpclib.Fault, fault:
+			r = getattr(self.server, methodname)(*args)
+		except xmlrpclib.Fault as fault:
 			raise BlogError(fault.faultString)
 
 		return r
@@ -97,8 +102,8 @@ class MetaWeblog(Blog):
 	This class extends Blog to implement metaWeblog API
 	"""
 
-	def __init__(self, serverapi, username, password, default_blog_id, appkey='0x001'):
-		Blog.__init__(self, serverapi, username, password, appkey, default_blog_id)
+	def __init__(self, serverapi, username, password, default_blog_id, methodList=[], appkey='0x001'):
+		Blog.__init__(self, serverapi, username, password, default_blog_id, methodList, appkey)
 		
 	def get_recent_posts(self, numposts=10, blog_id=None):
 		"""
@@ -148,7 +153,7 @@ class MetaWeblog(Blog):
 			new_post (dict): dictionary with content details about the new post.
 			publish (bool): Publish status.        
 		"""
-		return self.execute('metaWeblog.editPost', post_id, self.username, self.password, newpost, publish)
+		return self.execute('metaWeblog.editPost', post_id, self.username, self.password, new_post, publish)
 
 	def delete_post(self, post_id, publish=True):
 		"""
@@ -245,7 +250,14 @@ class MetaWeblog(Blog):
 			blog_id = self.default_blog_id
 		
 		return self.execute("metaWeblog.setTemplate", self.appkey, blog_id, self.username, self.password, template, template_type)        
-		
+
+class DotNetBlogEngine(MetaWeblog):
+	"""
+	DotNetBlogEngine does respond to MetaWeblog API but it does not offer the list_methods Opteration, therefore we fill self.methods here.
+	"""
+	def __init__(self, serverapi, username, password, default_blog_id="1"):
+		MetaWeblog.__init__(self, serverapi, username, password, default_blog_id, ['metaWeblog.newPost','metaWeblog.editPost'])
+
 class WordPress(MetaWeblog):
 	"""
 	Python interface to Wordpress API
@@ -470,7 +482,7 @@ class MovableType(MetaWeblog):
 		if not len(self.methods):
 			try:
 				self.methods = self.server.mt.supportedMethods()
-			except xmlrpclib.Fault, fault:
+			except xmlrpclib.Fault as fault:
 				raise BlogError(fault.faultString)
 
 		return self.methods.sort()
@@ -481,7 +493,7 @@ class MovableType(MetaWeblog):
 		
 		try:
 			r = getattr(self.server, methodname)(*args)
-		except xmlrpclib.Fault, fault:
+		except xmlrpclib.Fault as fault:
 			raise BlogError(fault.faultString)
 		
 		return r
